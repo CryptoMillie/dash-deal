@@ -107,13 +107,51 @@
   .settings-help b { color: var(--text); }
   .section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; margin: 18px 0 10px; }
   .reset-btn { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 12px; border-radius: 10px; font-size: 14px; margin-top: 12px; cursor: pointer; }
+
+  .accept-btn {
+    width: 100%; background: var(--accent); border: none; color: #fff; padding: 14px;
+    border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 14px;
+    display: none; transition: opacity 0.15s;
+  }
+  .accept-btn:active { opacity: 0.8; }
+
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--green); color: #fff; padding: 10px 24px; border-radius: 10px;
+    font-size: 14px; font-weight: 600; z-index: 200; opacity: 0; transition: opacity 0.2s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+
+  .header-btns { display: flex; gap: 8px; }
+
+  .earnings-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+
+  .recent-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; margin: 18px 0 10px; }
+
+  .recent-order {
+    display: flex; align-items: center; gap: 10px; padding: 10px 0;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .recent-order:last-child { border-bottom: none; }
+  .tier-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .tier-dot.excellent { background: var(--green); }
+  .tier-dot.good { background: var(--yellow); }
+  .tier-dot.marginal { background: var(--orange); }
+  .tier-dot.decline { background: var(--red); }
+  .recent-pay { font-weight: 700; min-width: 50px; }
+  .recent-detail { color: var(--muted); flex: 1; }
+  .recent-time { color: #555; font-size: 11px; text-align: right; }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
     <div class="logo">Dash<span>Deal</span></div>
-    <button class="icon-btn" id="settingsBtn">&#9881;</button>
+    <div class="header-btns">
+      <button class="icon-btn" id="earningsBtn">&#128200;</button>
+      <button class="icon-btn" id="settingsBtn">&#9881;</button>
+    </div>
   </header>
 
   <div class="inputs">
@@ -186,7 +224,11 @@
   </div>
 
   <div class="shop-note" id="shopNote" style="display:none;"></div>
+
+  <button class="accept-btn" id="acceptBtn">Accept Order</button>
 </div>
+
+<div class="toast" id="toast">Order logged</div>
 
 <div class="modal" id="settingsModal">
   <div class="modal-content">
@@ -278,6 +320,17 @@
     </div>
 
     <button class="reset-btn" id="resetBtn">Reset to Defaults</button>
+  </div>
+</div>
+
+<div class="modal" id="earningsModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Earnings</div>
+      <button class="close-btn" id="closeEarnings">&times;</button>
+    </div>
+    <div id="earningsBody"></div>
+    <button class="reset-btn" id="clearHistoryBtn">Clear History</button>
   </div>
 </div>
 
@@ -484,6 +537,184 @@
 
   [payInput, milesInput, returnInput, itemsInput, ordersInput].forEach(el => el.addEventListener('input', evaluate));
   updateReturnHint();
+
+  // --- Order Tracking ---
+  const acceptBtn = $('acceptBtn');
+  const toast = $('toast');
+  const earningsModal = $('earningsModal');
+  const earningsBody = $('earningsBody');
+  let lastEvalResult = null;
+
+  function loadOrders() {
+    try {
+      return JSON.parse(localStorage.getItem('dashdeal_orders') || '[]');
+    } catch { return []; }
+  }
+  function saveOrders(orders) {
+    try { localStorage.setItem('dashdeal_orders', JSON.stringify(orders)); } catch {}
+  }
+
+  // Patch evaluate to track last result and show/hide accept button
+  const _origEval = evaluate;
+  evaluate = function() {
+    _origEval();
+    const pay = parseFloat(payInput.value);
+    const delivMiles = parseFloat(milesInput.value);
+    if (!pay || !delivMiles || pay <= 0 || delivMiles <= 0) {
+      acceptBtn.style.display = 'none';
+      lastEvalResult = null;
+      return;
+    }
+    const returnOverride = parseFloat(returnInput.value);
+    const items = parseInt(itemsInput.value) || 0;
+    const orders = Math.max(1, parseInt(ordersInput.value) || 1);
+    const extraOrders = orders - 1;
+    const returnMiles = (!isNaN(returnOverride) && returnOverride >= 0) ? returnOverride : settings.returnDefault;
+    const totalMiles = delivMiles + returnMiles;
+    const perMile = pay / totalMiles;
+
+    const isShop = items > 0;
+    const isTimed = isShop || extraOrders > 0;
+    let perHour = null, totalMinutes = null;
+
+    if (isTimed) {
+      const shopMinutes = isShop ? (settings.shopBase + (items * settings.minsPerItem) + (extraOrders * settings.perOrderShop)) : 0;
+      const stackMinutes = extraOrders * settings.perStop;
+      const driveMinutes = (totalMiles / settings.avgSpeed) * 60;
+      totalMinutes = shopMinutes + stackMinutes + driveMinutes;
+      perHour = (pay / totalMinutes) * 60;
+    } else {
+      // Drive-time-only estimate for $/hr tracking
+      totalMinutes = (totalMiles / settings.avgSpeed) * 60;
+      perHour = totalMinutes > 0 ? (pay / totalMinutes) * 60 : null;
+    }
+
+    // Determine tier from verdict element's class
+    const tierMatch = verdict.className.match(/\b(excellent|good|marginal|decline)\b/);
+    const tier = tierMatch ? tierMatch[1] : 'decline';
+
+    lastEvalResult = {
+      pay, deliveryMiles: delivMiles, returnMiles, totalMiles, items, orders,
+      perMile, perHour, totalMinutes, tier
+    };
+    acceptBtn.style.display = 'block';
+  };
+  // Re-run to bind
+  evaluate();
+
+  acceptBtn.onclick = () => {
+    if (!lastEvalResult) return;
+    const order = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      ...lastEvalResult
+    };
+    const orders = loadOrders();
+    orders.push(order);
+    saveOrders(orders);
+
+    // Show toast
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+
+    // Reset inputs
+    payInput.value = '';
+    milesInput.value = '';
+    returnInput.value = '';
+    itemsInput.value = '';
+    ordersInput.value = '';
+    lastEvalResult = null;
+    acceptBtn.style.display = 'none';
+    evaluate();
+  };
+
+  // --- Earnings Modal ---
+  $('earningsBtn').onclick = () => { renderEarnings(); earningsModal.classList.add('open'); };
+  $('closeEarnings').onclick = () => earningsModal.classList.remove('open');
+  earningsModal.onclick = (e) => { if (e.target === earningsModal) earningsModal.classList.remove('open'); };
+
+  $('clearHistoryBtn').onclick = () => {
+    if (confirm('Clear all order history?')) {
+      saveOrders([]);
+      renderEarnings();
+    }
+  };
+
+  function timeAgo(ts) {
+    const diff = Date.now() - new Date(ts).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  }
+
+  function renderEarnings() {
+    const orders = loadOrders();
+    if (orders.length === 0) {
+      earningsBody.innerHTML = '<div style="text-align:center;color:var(--muted);padding:40px 0;">No orders yet.<br>Accept an order to start tracking.</div>';
+      return;
+    }
+
+    const totalPay = orders.reduce((s, o) => s + o.pay, 0);
+    const totalMiles = orders.reduce((s, o) => s + o.totalMiles, 0);
+    const totalMinutes = orders.reduce((s, o) => s + (o.totalMinutes || 0), 0);
+    const avgPerHour = totalMinutes > 0 ? (totalPay / totalMinutes) * 60 : 0;
+    const avgPerMile = totalMiles > 0 ? totalPay / totalMiles : 0;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayOfWeek = now.getDay();
+    const weekStart = todayStart - (dayOfWeek * 86400000);
+
+    const todayOrders = orders.filter(o => new Date(o.timestamp).getTime() >= todayStart);
+    const weekOrders = orders.filter(o => new Date(o.timestamp).getTime() >= weekStart);
+    const todayPay = todayOrders.reduce((s, o) => s + o.pay, 0);
+    const weekPay = weekOrders.reduce((s, o) => s + o.pay, 0);
+
+    const recent = orders.slice(-10).reverse();
+
+    earningsBody.innerHTML = `
+      <div class="earnings-summary">
+        <div class="stat">
+          <div class="stat-label">Total Earned</div>
+          <div class="stat-value pos">$${totalPay.toFixed(2)}</div>
+          <div class="stat-sub">${orders.length} order${orders.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Avg $/Hour</div>
+          <div class="stat-value">${avgPerHour > 0 ? '$' + avgPerHour.toFixed(0) : '—'}</div>
+          <div class="stat-sub">all orders</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Avg $/Mile</div>
+          <div class="stat-value">${avgPerMile > 0 ? '$' + avgPerMile.toFixed(2) : '—'}</div>
+          <div class="stat-sub">incl. return</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Today</div>
+          <div class="stat-value pos">$${todayPay.toFixed(2)}</div>
+          <div class="stat-sub">${todayOrders.length} order${todayOrders.length !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+      <div class="stat" style="margin-bottom:14px;">
+        <div class="stat-label">This Week</div>
+        <div class="stat-value pos">$${weekPay.toFixed(2)}</div>
+        <div class="stat-sub">${weekOrders.length} order${weekOrders.length !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="recent-title">Recent Orders</div>
+      ${recent.map(o => `
+        <div class="recent-order">
+          <div class="tier-dot ${o.tier}"></div>
+          <div class="recent-pay">$${o.pay.toFixed(2)}</div>
+          <div class="recent-detail">${o.totalMiles.toFixed(1)} mi${o.perHour != null ? ' · $' + o.perHour.toFixed(0) + '/hr' : ''}</div>
+          <div class="recent-time">${timeAgo(o.timestamp)}</div>
+        </div>
+      `).join('')}
+    `;
+  }
 </script>
 </body>
 </html>

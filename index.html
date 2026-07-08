@@ -427,6 +427,9 @@
     decline:   { emoji: '\uD83D\uDD34', label: 'Decline' }
   };
 
+  const acceptBtn = $('acceptBtn');
+  let lastEvalResult = null;
+
   function evaluate() {
     updateReturnHint();
     const pay = parseFloat(payInput.value);
@@ -441,6 +444,8 @@
       verdict.innerHTML = '<div class="verdict-emoji">\uD83D\uDCAD</div><div class="verdict-label">Enter offer</div><div class="verdict-sub">Type payout and miles to see verdict</div>';
       statsEl.style.display = 'none';
       shopNote.style.display = 'none';
+      acceptBtn.style.display = 'none';
+      lastEvalResult = null;
       return;
     }
 
@@ -533,17 +538,30 @@
       secondStatSub.textContent = 'delivery + return';
       shopNote.style.display = 'none';
     }
+
+    // --- Accept button result tracking ---
+    const evalReturnMiles = (!isNaN(returnOverride) && returnOverride >= 0) ? returnOverride : settings.returnDefault;
+    let evalPerHour = perHour, evalTotalMinutes = totalMinutes;
+    if (!isTimed) {
+      evalTotalMinutes = (totalMiles / settings.avgSpeed) * 60;
+      evalPerHour = evalTotalMinutes > 0 ? (pay / evalTotalMinutes) * 60 : null;
+    }
+    const tierMatch = verdict.className.match(/\b(excellent|good|marginal|decline)\b/);
+    lastEvalResult = {
+      pay, deliveryMiles: delivMiles, returnMiles: evalReturnMiles, totalMiles, items, orders,
+      perMile, perHour: evalPerHour, totalMinutes: evalTotalMinutes,
+      tier: tierMatch ? tierMatch[1] : 'decline'
+    };
+    acceptBtn.style.display = 'block';
   }
 
   [payInput, milesInput, returnInput, itemsInput, ordersInput].forEach(el => el.addEventListener('input', evaluate));
   updateReturnHint();
 
   // --- Order Tracking ---
-  const acceptBtn = $('acceptBtn');
   const toast = $('toast');
   const earningsModal = $('earningsModal');
   const earningsBody = $('earningsBody');
-  let lastEvalResult = null;
 
   function loadOrders() {
     try {
@@ -553,54 +571,6 @@
   function saveOrders(orders) {
     try { localStorage.setItem('dashdeal_orders', JSON.stringify(orders)); } catch {}
   }
-
-  // Patch evaluate to track last result and show/hide accept button
-  const _origEval = evaluate;
-  evaluate = function() {
-    _origEval();
-    const pay = parseFloat(payInput.value);
-    const delivMiles = parseFloat(milesInput.value);
-    if (!pay || !delivMiles || pay <= 0 || delivMiles <= 0) {
-      acceptBtn.style.display = 'none';
-      lastEvalResult = null;
-      return;
-    }
-    const returnOverride = parseFloat(returnInput.value);
-    const items = parseInt(itemsInput.value) || 0;
-    const orders = Math.max(1, parseInt(ordersInput.value) || 1);
-    const extraOrders = orders - 1;
-    const returnMiles = (!isNaN(returnOverride) && returnOverride >= 0) ? returnOverride : settings.returnDefault;
-    const totalMiles = delivMiles + returnMiles;
-    const perMile = pay / totalMiles;
-
-    const isShop = items > 0;
-    const isTimed = isShop || extraOrders > 0;
-    let perHour = null, totalMinutes = null;
-
-    if (isTimed) {
-      const shopMinutes = isShop ? (settings.shopBase + (items * settings.minsPerItem) + (extraOrders * settings.perOrderShop)) : 0;
-      const stackMinutes = extraOrders * settings.perStop;
-      const driveMinutes = (totalMiles / settings.avgSpeed) * 60;
-      totalMinutes = shopMinutes + stackMinutes + driveMinutes;
-      perHour = (pay / totalMinutes) * 60;
-    } else {
-      // Drive-time-only estimate for $/hr tracking
-      totalMinutes = (totalMiles / settings.avgSpeed) * 60;
-      perHour = totalMinutes > 0 ? (pay / totalMinutes) * 60 : null;
-    }
-
-    // Determine tier from verdict element's class
-    const tierMatch = verdict.className.match(/\b(excellent|good|marginal|decline)\b/);
-    const tier = tierMatch ? tierMatch[1] : 'decline';
-
-    lastEvalResult = {
-      pay, deliveryMiles: delivMiles, returnMiles, totalMiles, items, orders,
-      perMile, perHour, totalMinutes, tier
-    };
-    acceptBtn.style.display = 'block';
-  };
-  // Re-run to bind
-  evaluate();
 
   acceptBtn.onclick = () => {
     if (!lastEvalResult) return;

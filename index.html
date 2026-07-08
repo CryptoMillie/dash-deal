@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Dash Deal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg: #0a0a0a;
+    --panel: #141414;
+    --panel-2: #1c1c1c;
+    --border: #262626;
+    --text: #f5f5f5;
+    --muted: #888;
+    --accent: #ff3008;
+    --green: #10b981;
+    --yellow: #eab308;
+    --orange: #f97316;
+    --red: #ef4444;
+  }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    min-height: 100vh;
+    overscroll-behavior: none;
+  }
+  .app { max-width: 480px; margin: 0 auto; padding: 20px 18px 60px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-top: 8px; }
+  .logo { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .icon-btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+    width: 38px; height: 38px; border-radius: 10px; font-size: 18px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .inputs { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 18px; margin-bottom: 14px; }
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+  .label {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 7px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .label-hint { font-size: 11px; color: #555; text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .input-wrap { position: relative; display: flex; align-items: center; }
+  .prefix, .suffix { position: absolute; color: var(--muted); font-weight: 600; pointer-events: none; }
+  .prefix { left: 16px; font-size: 22px; }
+  .suffix { right: 16px; font-size: 14px; }
+  input[type="number"] {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    padding: 14px 50px 14px 36px; font-size: 24px; font-weight: 700; border-radius: 12px;
+    outline: none; transition: border-color 0.15s; -moz-appearance: textfield;
+  }
+  input[type="number"].no-prefix { padding-left: 16px; }
+  input[type="number"]:focus { border-color: var(--accent); }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .row-3 .field { margin-bottom: 0; }
+  .row-3 input { font-size: 18px; padding: 12px 34px 12px 12px; }
+  .row-3 .suffix { right: 10px; font-size: 11px; }
+  .row-3 .label { font-size: 11px; }
+  .row-3 .label-hint { font-size: 10px; }
+
+  .verdict {
+    border-radius: 16px; padding: 24px; text-align: center; margin-bottom: 14px;
+    border: 2px solid var(--border); background: var(--panel);
+  }
+  .verdict.excellent { border-color: var(--green); background: rgba(16, 185, 129, 0.1); }
+  .verdict.good { border-color: var(--yellow); background: rgba(234, 179, 8, 0.1); }
+  .verdict.marginal { border-color: var(--orange); background: rgba(249, 115, 22, 0.1); }
+  .verdict.decline { border-color: var(--red); background: rgba(239, 68, 68, 0.1); }
+  .verdict-emoji { font-size: 54px; line-height: 1; margin-bottom: 6px; }
+  .verdict-label { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .verdict.excellent .verdict-label { color: var(--green); }
+  .verdict.good .verdict-label { color: var(--yellow); }
+  .verdict.marginal .verdict-label { color: var(--orange); }
+  .verdict.decline .verdict-label { color: var(--red); }
+  .verdict-sub { font-size: 13px; color: var(--muted); line-height: 1.4; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 4px; }
+  .stat-value { font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+  .stat-value.pos { color: var(--green); }
+  .stat-value.neg { color: var(--red); }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .shop-note {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 14px; font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 10px;
+  }
+  .shop-note b { color: var(--orange); }
+
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); display: none; align-items: flex-end; z-index: 100; }
+  .modal.open { display: flex; }
+  .modal-content { background: var(--panel); width: 100%; max-width: 480px; margin: 0 auto; border-radius: 20px 20px 0 0; padding: 22px 20px 40px; max-height: 85vh; overflow-y: auto; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .modal-title { font-size: 20px; font-weight: 700; }
+  .close-btn { background: var(--panel-2); border: none; color: var(--text); width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+  .modal input { font-size: 17px; padding: 11px 14px 11px 32px; }
+  .modal .prefix { font-size: 16px; left: 12px; }
+  .modal .suffix { font-size: 13px; right: 14px; }
+  .modal input.no-prefix { padding-left: 14px; }
+  .settings-help { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
+  .settings-help b { color: var(--text); }
+  .section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 700; margin: 18px 0 10px; }
+  .reset-btn { width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 12px; border-radius: 10px; font-size: 14px; margin-top: 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">Dash<span>Deal</span></div>
+    <button class="icon-btn" id="settingsBtn">&#9881;</button>
+  </header>
+
+  <div class="inputs">
+    <div class="field">
+      <label class="label">Offer Payout</label>
+      <div class="input-wrap">
+        <span class="prefix">$</span>
+        <input type="number" id="payInput" inputmode="decimal" step="0.50" min="0" placeholder="0.00">
+      </div>
+    </div>
+    <div class="field">
+      <label class="label">
+        <span>Delivery Miles</span>
+        <span class="label-hint">pickup &rarr; drop-off</span>
+      </label>
+      <div class="input-wrap">
+        <input type="number" id="milesInput" inputmode="decimal" step="0.1" min="0" placeholder="0" class="no-prefix">
+        <span class="suffix">mi</span>
+      </div>
+    </div>
+    <div class="row-3">
+      <div class="field">
+        <label class="label">
+          <span>Return</span>
+        </label>
+        <div class="input-wrap">
+          <input type="number" id="returnInput" inputmode="decimal" step="0.1" min="0" placeholder="auto" class="no-prefix">
+          <span class="suffix">mi</span>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label">
+          <span>Items</span>
+        </label>
+        <div class="input-wrap">
+          <input type="number" id="itemsInput" inputmode="numeric" step="1" min="0" placeholder="0" class="no-prefix">
+          <span class="suffix">itm</span>
+        </div>
+      </div>
+      <div class="field">
+        <label class="label">
+          <span>Orders</span>
+        </label>
+        <div class="input-wrap">
+          <input type="number" id="ordersInput" inputmode="numeric" step="1" min="1" placeholder="1" class="no-prefix">
+          <span class="suffix">ord</span>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:8px; font-size:11px; color:#555;" id="returnHintRow">Return: <span id="returnHint">default</span></div>
+  </div>
+
+  <div class="verdict" id="verdict">
+    <div class="verdict-emoji">&#128173;</div>
+    <div class="verdict-label">Enter offer</div>
+    <div class="verdict-sub">Type payout and miles to see verdict</div>
+  </div>
+
+  <div class="stats" id="stats" style="display:none;">
+    <div class="stat">
+      <div class="stat-label">$ / Mile</div>
+      <div class="stat-value" id="perMile">&mdash;</div>
+      <div class="stat-sub">incl. return</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label" id="secondStatLabel">Total Miles</div>
+      <div class="stat-value" id="secondStat">&mdash;</div>
+      <div class="stat-sub" id="secondStatSub">delivery + return</div>
+    </div>
+  </div>
+
+  <div class="shop-note" id="shopNote" style="display:none;"></div>
+</div>
+
+<div class="modal" id="settingsModal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <div class="modal-title">Settings</div>
+      <button class="close-btn" id="closeSettings">&times;</button>
+    </div>
+
+    <div class="section-title">Floors</div>
+    <div class="field">
+      <label class="label">Min $/mile</label>
+      <div class="input-wrap">
+        <span class="prefix">$</span>
+        <input type="number" id="minMileInput" inputmode="decimal" step="0.10" min="0">
+        <span class="suffix">/mi</span>
+      </div>
+      <div class="settings-help">Industry rule: <b>$2/mi excellent, $1.50 good, $1 floor</b></div>
+    </div>
+    <div class="field">
+      <label class="label">Min Payout</label>
+      <div class="input-wrap">
+        <span class="prefix">$</span>
+        <input type="number" id="minPayInput" inputmode="decimal" step="0.50" min="0">
+      </div>
+      <div class="settings-help">Hard floor &mdash; auto-decline anything under this</div>
+    </div>
+    <div class="field">
+      <label class="label">Min $/hour</label>
+      <div class="input-wrap">
+        <span class="prefix">$</span>
+        <input type="number" id="minHourInput" inputmode="numeric" step="1" min="0">
+        <span class="suffix">/hr</span>
+      </div>
+      <div class="settings-help">Used on shopping orders &mdash; big item counts get judged on time, not just miles</div>
+    </div>
+
+    <div class="section-title">Zone &amp; Driving</div>
+    <div class="field">
+      <label class="label">Default Return Distance</label>
+      <div class="input-wrap">
+        <input type="number" id="returnDefaultInput" inputmode="decimal" step="0.5" min="0" class="no-prefix">
+        <span class="suffix">mi</span>
+      </div>
+      <div class="settings-help"><b>Key variable.</b> Typical miles back to your hotspot after a drop</div>
+    </div>
+    <div class="field">
+      <label class="label">Avg Speed</label>
+      <div class="input-wrap">
+        <input type="number" id="speedInput" inputmode="numeric" step="1" min="1" class="no-prefix">
+        <span class="suffix">mph</span>
+      </div>
+      <div class="settings-help">~20 city, ~30 suburb. Used to estimate drive time on shop orders</div>
+    </div>
+
+    <div class="section-title">Shopping Orders</div>
+    <div class="field">
+      <label class="label">Minutes Per Item</label>
+      <div class="input-wrap">
+        <input type="number" id="minsPerItemInput" inputmode="decimal" step="0.25" min="0" class="no-prefix">
+        <span class="suffix">min</span>
+      </div>
+      <div class="settings-help">Find + scan + substitutions. ~1.5 min average, more if you're new to the store</div>
+    </div>
+    <div class="field">
+      <label class="label">Base Shop Overhead</label>
+      <div class="input-wrap">
+        <input type="number" id="shopBaseInput" inputmode="numeric" step="1" min="0" class="no-prefix">
+        <span class="suffix">min</span>
+      </div>
+      <div class="settings-help">Parking, cart, checkout line, bagging, staging. ~5&ndash;8 min typical</div>
+    </div>
+
+    <div class="section-title">Stacked Orders</div>
+    <div class="field">
+      <label class="label">Extra Time Per Added Drop</label>
+      <div class="input-wrap">
+        <input type="number" id="perStopInput" inputmode="decimal" step="0.5" min="0" class="no-prefix">
+        <span class="suffix">min</span>
+      </div>
+      <div class="settings-help">Parking, apartment hunt, photo, handoff at each extra stop. ~5 min typical</div>
+    </div>
+    <div class="field">
+      <label class="label">Extra Checkout Per Added Order</label>
+      <div class="input-wrap">
+        <input type="number" id="perOrderShopInput" inputmode="decimal" step="0.5" min="0" class="no-prefix">
+        <span class="suffix">min</span>
+      </div>
+      <div class="settings-help">Split-order friction in-store: bag separation, extra transaction. ~3 min. Only applies on shop orders</div>
+    </div>
+
+    <button class="reset-btn" id="resetBtn">Reset to Defaults</button>
+  </div>
+</div>
+
+<script>
+  const DEFAULTS = {
+    returnDefault: 3,
+    minMile: 1.50,
+    minPay: 7,
+    minHour: 25,
+    avgSpeed: 25,
+    minsPerItem: 1.5,
+    shopBase: 6,
+    perStop: 5,
+    perOrderShop: 3
+  };
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem('dashdeal_settings');
+      if (!raw) return { ...DEFAULTS };
+      return { ...DEFAULTS, ...JSON.parse(raw) };
+    } catch { return { ...DEFAULTS }; }
+  }
+  function saveSettings(s) {
+    try { localStorage.setItem('dashdeal_settings', JSON.stringify(s)); } catch {}
+  }
+
+  let settings = loadSettings();
+
+  const $ = (id) => document.getElementById(id);
+  const payInput = $('payInput'), milesInput = $('milesInput'), returnInput = $('returnInput'), itemsInput = $('itemsInput'), ordersInput = $('ordersInput');
+  const returnHint = $('returnHint');
+  const verdict = $('verdict'), statsEl = $('stats'), shopNote = $('shopNote');
+  const perMileEl = $('perMile');
+  const secondStatLabel = $('secondStatLabel'), secondStat = $('secondStat'), secondStatSub = $('secondStatSub');
+  const returnDefaultInput = $('returnDefaultInput'), minMileInput = $('minMileInput'), minPayInput = $('minPayInput');
+  const minHourInput = $('minHourInput'), speedInput = $('speedInput'), minsPerItemInput = $('minsPerItemInput'), shopBaseInput = $('shopBaseInput');
+  const perStopInput = $('perStopInput'), perOrderShopInput = $('perOrderShopInput');
+  const settingsModal = $('settingsModal');
+
+  $('settingsBtn').onclick = () => { renderSettings(); settingsModal.classList.add('open'); };
+  $('closeSettings').onclick = () => settingsModal.classList.remove('open');
+  settingsModal.onclick = (e) => { if (e.target === settingsModal) settingsModal.classList.remove('open'); };
+
+  function renderSettings() {
+    returnDefaultInput.value = settings.returnDefault;
+    minMileInput.value = settings.minMile;
+    minPayInput.value = settings.minPay;
+    minHourInput.value = settings.minHour;
+    speedInput.value = settings.avgSpeed;
+    minsPerItemInput.value = settings.minsPerItem;
+    shopBaseInput.value = settings.shopBase;
+    perStopInput.value = settings.perStop;
+    perOrderShopInput.value = settings.perOrderShop;
+    updateReturnHint();
+  }
+
+  function updateReturnHint() {
+    const v = returnInput.value;
+    returnHint.textContent = (v === '' || v === null) ? `default: ${settings.returnDefault} mi` : `override`;
+  }
+
+  [returnDefaultInput, minMileInput, minPayInput, minHourInput, speedInput, minsPerItemInput, shopBaseInput, perStopInput, perOrderShopInput].forEach(el => {
+    el.addEventListener('input', () => {
+      settings = {
+        returnDefault: parseFloat(returnDefaultInput.value) || DEFAULTS.returnDefault,
+        minMile: parseFloat(minMileInput.value) || DEFAULTS.minMile,
+        minPay: parseFloat(minPayInput.value) || DEFAULTS.minPay,
+        minHour: parseFloat(minHourInput.value) || DEFAULTS.minHour,
+        avgSpeed: parseFloat(speedInput.value) || DEFAULTS.avgSpeed,
+        minsPerItem: parseFloat(minsPerItemInput.value) || DEFAULTS.minsPerItem,
+        shopBase: parseFloat(shopBaseInput.value) || DEFAULTS.shopBase,
+        perStop: parseFloat(perStopInput.value) >= 0 ? parseFloat(perStopInput.value) : DEFAULTS.perStop,
+        perOrderShop: parseFloat(perOrderShopInput.value) >= 0 ? parseFloat(perOrderShopInput.value) : DEFAULTS.perOrderShop
+      };
+      saveSettings(settings);
+      updateReturnHint();
+      evaluate();
+    });
+  });
+
+  $('resetBtn').onclick = () => {
+    settings = { ...DEFAULTS };
+    saveSettings(settings);
+    renderSettings();
+    evaluate();
+  };
+
+  const TIERS = ['decline', 'marginal', 'good', 'excellent'];
+  const TIER_META = {
+    excellent: { emoji: '\uD83D\uDFE2', label: 'Excellent' },
+    good:      { emoji: '\uD83D\uDFE1', label: 'Good' },
+    marginal:  { emoji: '\uD83D\uDFE0', label: 'Marginal' },
+    decline:   { emoji: '\uD83D\uDD34', label: 'Decline' }
+  };
+
+  function evaluate() {
+    updateReturnHint();
+    const pay = parseFloat(payInput.value);
+    const delivMiles = parseFloat(milesInput.value);
+    const returnOverride = parseFloat(returnInput.value);
+    const items = parseInt(itemsInput.value) || 0;
+    const orders = Math.max(1, parseInt(ordersInput.value) || 1);
+    const extraOrders = orders - 1;
+
+    if (!pay || !delivMiles || pay <= 0 || delivMiles <= 0) {
+      verdict.className = 'verdict';
+      verdict.innerHTML = '<div class="verdict-emoji">\uD83D\uDCAD</div><div class="verdict-label">Enter offer</div><div class="verdict-sub">Type payout and miles to see verdict</div>';
+      statsEl.style.display = 'none';
+      shopNote.style.display = 'none';
+      return;
+    }
+
+    const returnMiles = (!isNaN(returnOverride) && returnOverride >= 0) ? returnOverride : settings.returnDefault;
+    const totalMiles = delivMiles + returnMiles;
+    const perMile = pay / totalMiles;
+
+    // --- Base tier from $/mi ---
+    const excellentThreshold = settings.minMile * 1.33;
+    const marginalThreshold = settings.minMile * 0.67;
+    let tierIdx;
+    if (perMile >= excellentThreshold) tierIdx = 3;
+    else if (perMile >= settings.minMile) tierIdx = 2;
+    else if (perMile >= marginalThreshold) tierIdx = 1;
+    else tierIdx = 0;
+
+    let sub = `${perMile.toFixed(2)}/mi`;
+    let isShop = items > 0;
+    let isTimed = isShop || extraOrders > 0;
+    let perHour = null, shopMinutes = 0, stackMinutes = 0, totalMinutes = 0;
+
+    // --- Time-adjusted check: shopping orders and/or stacked orders ---
+    if (isTimed) {
+      shopMinutes = isShop ? (settings.shopBase + (items * settings.minsPerItem) + (extraOrders * settings.perOrderShop)) : 0;
+      stackMinutes = extraOrders * settings.perStop;
+      const driveMinutes = (totalMiles / settings.avgSpeed) * 60;
+      totalMinutes = shopMinutes + stackMinutes + driveMinutes;
+      perHour = (pay / totalMinutes) * 60;
+
+      const overheadMin = Math.round(shopMinutes + stackMinutes);
+      if (perHour < settings.minHour * 0.6) {
+        tierIdx = Math.max(0, tierIdx - 2);
+        sub = `${perHour.toFixed(0)}/hr after ~${overheadMin} min of shop/stop time \u2014 time trap`;
+      } else if (perHour < settings.minHour) {
+        tierIdx = Math.max(0, tierIdx - 1);
+        sub = `${perHour.toFixed(0)}/hr \u2014 overhead drags it below your ${settings.minHour}/hr floor`;
+      } else {
+        sub = `${perMile.toFixed(2)}/mi and ${perHour.toFixed(0)}/hr \u2014 clears both`;
+      }
+    }
+
+    // --- Hard payout floor overrides everything ---
+    if (pay < settings.minPay) {
+      tierIdx = 0;
+      sub = `Below your ${settings.minPay.toFixed(2)} payout floor`;
+    }
+
+    const tier = TIERS[tierIdx];
+    const meta = TIER_META[tier];
+    if (!isShop && tierIdx > 0) {
+      if (tier === 'excellent') sub = `${perMile.toFixed(2)}/mi \u2014 accept`;
+      else if (tier === 'good') sub = `${perMile.toFixed(2)}/mi \u2014 solid offer`;
+      else if (tier === 'marginal') sub = `${perMile.toFixed(2)}/mi \u2014 only if nothing else is dashing`;
+    }
+    if (!isShop && tierIdx === 0 && pay >= settings.minPay) {
+      sub = `${perMile.toFixed(2)}/mi \u2014 well below floor`;
+    }
+
+    verdict.className = `verdict ${tier}`;
+    verdict.innerHTML = `
+      <div class="verdict-emoji">${meta.emoji}</div>
+      <div class="verdict-label">${meta.label}</div>
+      <div class="verdict-sub">${sub}</div>
+    `;
+
+    // --- Stats ---
+    statsEl.style.display = 'grid';
+    perMileEl.textContent = `${perMile.toFixed(2)}`;
+    perMileEl.className = `stat-value ${perMile >= settings.minMile ? 'pos' : 'neg'}`;
+
+    if (isTimed) {
+      secondStatLabel.textContent = '$ / Hour';
+      secondStat.textContent = `${perHour.toFixed(0)}`;
+      secondStat.className = `stat-value ${perHour >= settings.minHour ? 'pos' : 'neg'}`;
+      secondStatSub.textContent = `~${Math.round(totalMinutes)} min total`;
+
+      shopNote.style.display = 'block';
+      let noteParts = [];
+      if (isShop) {
+        noteParts.push(`${items} items \u2248 ${Math.round(shopMinutes)} min in-store` + (extraOrders > 0 ? ` (incl. +${Math.round(extraOrders * settings.perOrderShop)} min split-order checkout)` : ''));
+      }
+      if (extraOrders > 0) {
+        noteParts.push(`${orders} drop-offs adds ~${Math.round(stackMinutes)} min of stop overhead`);
+      }
+      shopNote.innerHTML = `<b>${isShop ? 'Shop' : 'Stacked'} order:</b> ` + noteParts.join('. ') + `. Time invisible in $/mi \u2014 that's why the $/hr check exists.`;
+    } else {
+      secondStatLabel.textContent = 'Total Miles';
+      secondStat.textContent = totalMiles.toFixed(1);
+      secondStat.className = 'stat-value';
+      secondStatSub.textContent = 'delivery + return';
+      shopNote.style.display = 'none';
+    }
+  }
+
+  [payInput, milesInput, returnInput, itemsInput, ordersInput].forEach(el => el.addEventListener('input', evaluate));
+  updateReturnHint();
+</script>
+</body>
+</html>

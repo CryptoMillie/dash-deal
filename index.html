@@ -123,7 +123,22 @@
   }
   .toast.show { opacity: 1; }
 
-  .header-btns { display: flex; gap: 8px; }
+  .header-btns { display: flex; gap: 8px; align-items: center; }
+  .dash-timer {
+    font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 14px; font-weight: 600; color: var(--muted);
+    letter-spacing: 0.5px; cursor: pointer; padding: 4px 8px;
+    border-radius: 8px; transition: color 0.2s;
+  }
+  .dash-timer.active { color: var(--green); }
+  .dash-toggle-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 4px 8px; border-radius: 6px; cursor: pointer; display: none;
+  }
+  .dash-toggle-btn:active { opacity: 0.7; }
+  .dash-toggle-btn.end { border-color: var(--red); color: var(--red); }
+  .dash-toggle-btn.start { border-color: var(--green); color: var(--green); }
 
   .earnings-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 
@@ -140,8 +155,36 @@
   .tier-dot.marginal { background: var(--orange); }
   .tier-dot.decline { background: var(--red); }
   .recent-pay { font-weight: 700; min-width: 50px; }
+  .recent-tip { color: var(--green); font-size: 12px; font-weight: 600; }
   .recent-detail { color: var(--muted); flex: 1; }
   .recent-time { color: #555; font-size: 11px; text-align: right; }
+
+  .tip-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--green);
+    font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+    cursor: pointer; white-space: nowrap; flex-shrink: 0;
+  }
+  .tip-btn:active { opacity: 0.7; }
+  .tip-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 0 10px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tip-row input {
+    width: 80px; background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 8px 6px 22px; font-size: 14px; font-weight: 600; border-radius: 8px;
+    outline: none; -moz-appearance: textfield;
+  }
+  .tip-row input:focus { border-color: var(--green); }
+  .tip-row .prefix { font-size: 13px; left: 8px; }
+  .tip-save-btn {
+    background: var(--green); border: none; color: #fff; font-size: 12px;
+    font-weight: 600; padding: 6px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .tip-save-btn:active { opacity: 0.8; }
+  .tip-cancel-btn {
+    background: transparent; border: none; color: var(--muted); font-size: 12px;
+    cursor: pointer; padding: 6px 4px;
+  }
 </style>
 </head>
 <body>
@@ -149,6 +192,8 @@
   <header>
     <div class="logo">Dash<span>Deal</span></div>
     <div class="header-btns">
+      <span id="dashTimer" class="dash-timer">0:00:00</span>
+      <button id="dashToggleBtn" class="dash-toggle-btn">End</button>
       <button class="icon-btn" id="earningsBtn">&#128200;</button>
       <button class="icon-btn" id="settingsBtn">&#9881;</button>
     </div>
@@ -558,6 +603,149 @@
   [payInput, milesInput, returnInput, itemsInput, ordersInput].forEach(el => el.addEventListener('input', evaluate));
   updateReturnHint();
 
+  // --- Dash Timer ---
+  const dashTimerEl = $('dashTimer');
+  const dashToggleBtn = $('dashToggleBtn');
+  const TIMER_KEY = 'dashdeal_dash_timer';
+  const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function loadTimer() {
+    try {
+      const raw = localStorage.getItem(TIMER_KEY);
+      if (!raw) return null;
+      const t = JSON.parse(raw);
+      if (t.date !== todayStr()) { localStorage.removeItem(TIMER_KEY); return null; }
+      return t;
+    } catch { return null; }
+  }
+
+  function saveTimer(t) {
+    try { localStorage.setItem(TIMER_KEY, JSON.stringify(t)); } catch {}
+  }
+
+  function getTimerElapsed(t) {
+    if (!t) return 0;
+    let total = t.elapsed || 0;
+    if (t.segmentStart) total += Date.now() - t.segmentStart;
+    return total;
+  }
+
+  function formatTimer(ms) {
+    const totalSec = Math.floor(Math.max(0, ms) / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function startDashSegment() {
+    let t = loadTimer();
+    // If dash was manually ended, don't auto-resume
+    if (t && t.ended) {
+      t.lastAccept = Date.now();
+      saveTimer(t);
+      return;
+    }
+    if (!t) t = { date: todayStr(), elapsed: 0, segmentStart: null, lastAccept: null, ended: false };
+    const now = Date.now();
+    // Only set segmentStart if not already running (don't restart on every accept)
+    if (!t.segmentStart) t.segmentStart = now;
+    t.lastAccept = now;
+    t.ended = false;
+    saveTimer(t);
+    updateTimerDisplay();
+  }
+
+  function pauseDash() {
+    const t = loadTimer();
+    if (!t || !t.segmentStart) return;
+    t.elapsed = (t.elapsed || 0) + (Date.now() - t.segmentStart);
+    t.segmentStart = null;
+    saveTimer(t);
+    updateTimerDisplay();
+  }
+
+  function endDash() {
+    const t = loadTimer();
+    if (!t) return;
+    // Accumulate any running segment
+    if (t.segmentStart) {
+      t.elapsed = (t.elapsed || 0) + (Date.now() - t.segmentStart);
+      t.segmentStart = null;
+    }
+    t.ended = true;
+    saveTimer(t);
+    updateTimerDisplay();
+  }
+
+  function resumeDash() {
+    const t = loadTimer();
+    if (!t) return;
+    t.ended = false;
+    t.segmentStart = Date.now();
+    t.lastAccept = Date.now();
+    saveTimer(t);
+    updateTimerDisplay();
+  }
+
+  function updateTimerDisplay() {
+    const t = loadTimer();
+    const ms = getTimerElapsed(t);
+    const isRunning = !!(t && t.segmentStart && !t.ended);
+    const isEnded = !!(t && t.ended);
+    const hasDash = !!(t && (t.elapsed > 0 || t.segmentStart));
+
+    dashTimerEl.textContent = formatTimer(ms);
+    dashTimerEl.classList.toggle('active', isRunning);
+
+    // Toggle button visibility and state
+    if (hasDash || isEnded) {
+      dashToggleBtn.style.display = 'inline-block';
+      if (isEnded) {
+        dashToggleBtn.textContent = 'Start';
+        dashToggleBtn.className = 'dash-toggle-btn start';
+      } else {
+        dashToggleBtn.textContent = 'End';
+        dashToggleBtn.className = 'dash-toggle-btn end';
+      }
+    } else {
+      dashToggleBtn.style.display = 'none';
+    }
+  }
+
+  function tickTimer() {
+    const t = loadTimer();
+    if (t && t.segmentStart && !t.ended && t.lastAccept) {
+      // Auto-pause after 30 min inactivity (not a full end, just pause)
+      if (Date.now() - t.lastAccept > INACTIVITY_TIMEOUT) {
+        pauseDash();
+        return;
+      }
+    }
+    updateTimerDisplay();
+  }
+
+  dashToggleBtn.onclick = () => {
+    const t = loadTimer();
+    if (t && t.ended) {
+      resumeDash();
+    } else {
+      endDash();
+    }
+  };
+
+  // Clicking timer opens earnings modal
+  dashTimerEl.onclick = () => { renderEarnings(); earningsModal.classList.add('open'); };
+
+  // Start ticking
+  updateTimerDisplay();
+  setInterval(tickTimer, 1000);
+
   // --- Order Tracking ---
   const toast = $('toast');
   const earningsModal = $('earningsModal');
@@ -582,6 +770,9 @@
     const orders = loadOrders();
     orders.push(order);
     saveOrders(orders);
+
+    // Start/resume dash timer
+    startDashSegment();
 
     // Show toast
     toast.classList.add('show');
@@ -621,6 +812,26 @@
     return `${days}d ago`;
   }
 
+  function saveTip(orderId, tipAmount) {
+    const orders = loadOrders();
+    const idx = orders.findIndex(o => o.id === orderId);
+    if (idx === -1) return;
+    orders[idx].tip = tipAmount;
+    saveOrders(orders);
+    renderEarnings();
+  }
+
+  function toggleTipInput(orderId) {
+    const row = document.getElementById('tip-row-' + orderId);
+    if (row) {
+      row.style.display = row.style.display === 'none' ? 'flex' : 'none';
+      if (row.style.display === 'flex') {
+        const input = row.querySelector('input');
+        if (input) input.focus();
+      }
+    }
+  }
+
   function renderEarnings() {
     const orders = loadOrders();
     if (orders.length === 0) {
@@ -628,7 +839,8 @@
       return;
     }
 
-    const totalPay = orders.reduce((s, o) => s + o.pay, 0);
+    const totalTips = orders.reduce((s, o) => s + (o.tip || 0), 0);
+    const totalPay = orders.reduce((s, o) => s + o.pay + (o.tip || 0), 0);
     const totalMiles = orders.reduce((s, o) => s + o.totalMiles, 0);
     const totalMinutes = orders.reduce((s, o) => s + (o.totalMinutes || 0), 0);
     const avgPerHour = totalMinutes > 0 ? (totalPay / totalMinutes) * 60 : 0;
@@ -641,8 +853,14 @@
 
     const todayOrders = orders.filter(o => new Date(o.timestamp).getTime() >= todayStart);
     const weekOrders = orders.filter(o => new Date(o.timestamp).getTime() >= weekStart);
-    const todayPay = todayOrders.reduce((s, o) => s + o.pay, 0);
-    const weekPay = weekOrders.reduce((s, o) => s + o.pay, 0);
+    const todayPay = todayOrders.reduce((s, o) => s + o.pay + (o.tip || 0), 0);
+    const weekPay = weekOrders.reduce((s, o) => s + o.pay + (o.tip || 0), 0);
+
+    // Real dash time from timer
+    const timerData = loadTimer();
+    const dashMs = getTimerElapsed(timerData);
+    const dashHours = dashMs / 3600000;
+    const realPerHour = dashHours > 0.01 ? todayPay / dashHours : 0;
 
     const recent = orders.slice(-10).reverse();
 
@@ -651,16 +869,26 @@
         <div class="stat">
           <div class="stat-label">Total Earned</div>
           <div class="stat-value pos">$${totalPay.toFixed(2)}</div>
-          <div class="stat-sub">${orders.length} order${orders.length !== 1 ? 's' : ''}</div>
+          <div class="stat-sub">${orders.length} order${orders.length !== 1 ? 's' : ''}${totalTips > 0 ? ' · $' + totalTips.toFixed(2) + ' tips' : ''}</div>
         </div>
         <div class="stat">
           <div class="stat-label">Avg $/Hour</div>
-          <div class="stat-value">${avgPerHour > 0 ? '$' + avgPerHour.toFixed(0) : '—'}</div>
-          <div class="stat-sub">all orders</div>
+          <div class="stat-value">${avgPerHour > 0 ? '$' + avgPerHour.toFixed(0) : '\u2014'}</div>
+          <div class="stat-sub">estimated</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Dash Time</div>
+          <div class="stat-value" style="font-size:20px;">${formatTimer(dashMs)}</div>
+          <div class="stat-sub">${timerData && timerData.ended ? 'ended' : (timerData && timerData.segmentStart ? 'active' : 'paused')}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Real $/Hour</div>
+          <div class="stat-value ${realPerHour >= settings.minHour ? 'pos' : (realPerHour > 0 ? 'neg' : '')}">${realPerHour > 0 ? '$' + realPerHour.toFixed(0) : '\u2014'}</div>
+          <div class="stat-sub">today actual</div>
         </div>
         <div class="stat">
           <div class="stat-label">Avg $/Mile</div>
-          <div class="stat-value">${avgPerMile > 0 ? '$' + avgPerMile.toFixed(2) : '—'}</div>
+          <div class="stat-value">${avgPerMile > 0 ? '$' + avgPerMile.toFixed(2) : '\u2014'}</div>
           <div class="stat-sub">incl. return</div>
         </div>
         <div class="stat">
@@ -675,14 +903,29 @@
         <div class="stat-sub">${weekOrders.length} order${weekOrders.length !== 1 ? 's' : ''}</div>
       </div>
       <div class="recent-title">Recent Orders</div>
-      ${recent.map(o => `
+      ${recent.map(o => {
+        const tip = o.tip || 0;
+        const totalWithTip = o.pay + tip;
+        return `
         <div class="recent-order">
           <div class="tier-dot ${o.tier}"></div>
-          <div class="recent-pay">$${o.pay.toFixed(2)}</div>
-          <div class="recent-detail">${o.totalMiles.toFixed(1)} mi${o.perHour != null ? ' · $' + o.perHour.toFixed(0) + '/hr' : ''}</div>
+          <div style="min-width:50px;">
+            <div class="recent-pay">$${totalWithTip.toFixed(2)}</div>
+            ${tip > 0 ? `<div class="recent-tip">+$${tip.toFixed(2)} tip</div>` : ''}
+          </div>
+          <div class="recent-detail">${o.totalMiles.toFixed(1)} mi${o.perHour != null ? ' \u00b7 $' + o.perHour.toFixed(0) + '/hr' : ''}</div>
+          <button class="tip-btn" onclick="toggleTipInput(${o.id})">${tip > 0 ? 'edit tip' : '+tip'}</button>
           <div class="recent-time">${timeAgo(o.timestamp)}</div>
         </div>
-      `).join('')}
+        <div class="tip-row" id="tip-row-${o.id}" style="display:none;">
+          <div class="input-wrap" style="flex:0;">
+            <span class="prefix">$</span>
+            <input type="number" id="tip-input-${o.id}" inputmode="decimal" step="0.50" min="0" placeholder="0.00" value="${tip > 0 ? tip : ''}">
+          </div>
+          <button class="tip-save-btn" onclick="saveTip(${o.id}, parseFloat(document.getElementById('tip-input-${o.id}').value) || 0)">Save</button>
+          <button class="tip-cancel-btn" onclick="toggleTipInput(${o.id})">Cancel</button>
+        </div>`;
+      }).join('')}
     `;
   }
 </script>
